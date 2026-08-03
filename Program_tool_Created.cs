@@ -13,9 +13,7 @@ const string endpoint =
     "https://agent-trials-resource.services.ai.azure.com/api/projects/agent-trials";
 
 const string agentName = "Foundry-Learning-Agent";
-
-const string agentVersion = "5";
-
+const string agentVersion = "12";
 
 if (!Uri.TryCreate(endpoint.Trim(), UriKind.Absolute, out var projectUri))
 {
@@ -28,15 +26,13 @@ var projectClient = new AIProjectClient(
     tokenProvider: new DefaultAzureCredential());
 
 
+
 // ------------------------------------------------------------
 // 3. Connect the Responses client to the newly created version.
 // ------------------------------------------------------------
-
 var agentReference = new AgentReference(
     name: agentName,
-    //name: createdAgentVersion.Value.Name,
     version: agentVersion);
-    //version: createdAgentVersion.Value.Version);
 
 var responseClient =
     projectClient.ProjectOpenAIClient.GetProjectResponsesClientForAgent(agentReference);
@@ -46,6 +42,13 @@ Console.WriteLine();
 
 string? previousResponseId = null;
 
+Console.WriteLine("Foundry Learning Agent is ready.");
+Console.WriteLine("Try asking for a study plan.");
+Console.WriteLine("Example:");
+Console.WriteLine(
+    "I have 6 hours for Microsoft Foundry Agent Tools. "
+    + "Create a plan with 3 sessions.");
+Console.WriteLine();
 Console.WriteLine("Type 'new' to begin a new conversation.");
 Console.WriteLine("Type 'exit' to close the chat.");
 Console.WriteLine();
@@ -104,24 +107,26 @@ while (true)
         {
             toolWasCalled = false;
 
-            var followUpItems = new List<ResponseItem>();
+            // This list must contain ONLY the outputs from local tools
+            // that your C# program executed.
+
+            var localToolOutputs = new List<ResponseItem>();
 
             // Include Foundry's output items, especially the function-call request.
             foreach (ResponseItem outputItem in response.OutputItems)
             {
-                followUpItems.Add(outputItem);
-
                 if (outputItem is FunctionCallResponseItem functionCall)
                 {
                     if (functionCall.FunctionName == "create_study_plan")
                     {
                         Console.WriteLine("Tool requested: create_study_plan");
+                        // Runs your local C# code and creates the result
+                        // that Foundry expects from this specific call.
+
 
                         var toolOutput = ResolveStudyPlanTool(functionCall);
 
-                        // Add the real result from your C# function.
-                        followUpItems.Add(toolOutput);
-
+                        localToolOutputs.Add(toolOutput);
                         toolWasCalled = true;
                     }
                     else
@@ -136,11 +141,17 @@ while (true)
             // If a tool was called, send the function result back to Foundry.
             if (toolWasCalled)
             {
-                var followUpOptions = new CreateResponseOptions();
-
-                foreach (var item in followUpItems)
+                
+                var followUpOptions = new CreateResponseOptions
                 {
-                    followUpOptions.InputItems.Add(item);
+                    //This tells Foundry: the tool results belong to the response you just gave me.
+                    PreviousResponseId = response.Id
+                };
+
+                // Add ONLY the results from tools executed by this local app.
+                foreach (ResponseItem toolOutput in localToolOutputs)
+                {
+                    followUpOptions.InputItems.Add(toolOutput);
                 }
 
                 var followUpResult =
@@ -201,15 +212,16 @@ static FunctionCallOutputResponseItem ResolveStudyPlanTool(
             .GetProperty("totalHours")
             .GetInt32();
 
-        int numberOfSessions = arguments
-            .GetProperty("numberOfSessions")
-            .GetInt32();
+        var sessionGoals = arguments
+            .GetProperty("sessionGoals")
+            .EnumerateArray()
+            .Select(goal => goal.GetString() ?? string.Empty)
+            .ToList();
 
-        // This is your existing C# function.
         string studyPlan = StudyTools.CreateStudyPlan(
             topic: topic,
             totalHours: totalHours,
-            numberOfSessions: numberOfSessions);
+            sessionGoals: sessionGoals);
 
         return ResponseItem.CreateFunctionCallOutputItem(
             functionCall.CallId,
