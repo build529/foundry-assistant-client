@@ -13,7 +13,9 @@ const string endpoint =
     "https://agent-trials-resource.services.ai.azure.com/api/projects/agent-trials";
 
 const string agentName = "Foundry-Learning-Agent";
-const string modelDeploymentName = "gpt-4.1-mini";
+
+const string agentVersion = "5";
+
 
 if (!Uri.TryCreate(endpoint.Trim(), UriKind.Absolute, out var projectUri))
 {
@@ -27,144 +29,23 @@ var projectClient = new AIProjectClient(
 
 
 // ------------------------------------------------------------
-// 1. Define the tool for Foundry.
-// This is the description the model receives.
-// It does NOT execute the function yet.
-// ------------------------------------------------------------
-FunctionTool studyPlanTool = ResponseTool.CreateFunctionTool(
-    functionName: "create_study_plan",
-    functionDescription:
-        "Creates a structured study plan when the user gives a topic, "
-        + "total study hours, and number of study sessions.",
-    functionParameters: BinaryData.FromObjectAsJson(
-        new
-        {
-            type = "object",
-            properties = new
-            {
-                topic = new
-                {
-                    type = "string",
-                    description =
-                        "The topic the user wants to study. "
-                        + "For example: Microsoft Foundry Agent Tools."
-                },
-                totalHours = new
-                {
-                    type = "integer",
-                    description =
-                        "The total number of study hours available. "
-                        + "Must be greater than zero."
-                },
-                sessionGoals = new
-                {
-                    type = "array",
-                    description =
-                        "A list of specific, topic-related learning goals. "
-                        + "Create one goal for each study session. "
-                        + "Each goal must name a concrete concept, practical task, "
-                        + "or expected outcome related to the user's topic. "
-                        + "Do not use vague goals such as 'practice more' or "
-                        + "'learn more about the topic'.",
-                    items = new
-                    {
-                        type = "string"
-                    },
-                    minItems = 1
-                }
-            },
-            required = new[]
-            {
-                "topic",
-                "totalHours",
-                "sessionGoals"
-            },
-            additionalProperties = false
-        },
-        new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        }),
-    strictModeEnabled: false);
-
-
-// ------------------------------------------------------------
-// 2. Create a NEW Foundry agent version with this tool.
-// Do not use the old hard-coded version number here.
-// ------------------------------------------------------------
-var agentDefinition = new DeclarativeAgentDefinition(modelDeploymentName)
-{
-    Instructions =
-        """
-        You are Foundry Learning Agent, a patient assistant for a beginner
-        learning Microsoft Foundry, Azure AI, .NET, C#, and AI-agent design.
-
-        Explain technical concepts in simple English and proceed step by step.
-
-        When the user asks for a study plan and provides, or can reasonably
-        clarify, a topic, total hours, and number of sessions, use the
-        create_study_plan tool.
-
-        Before calling create_study_plan, create one specific session goal for
-        each requested session. Each goal must be directly related to the topic
-        and should include a concrete concept, hands-on action, or measurable
-        learning outcome.
-
-        Never use vague session goals such as:
-        - "Learn more about the topic."
-        - "Practice more."
-        - "Review the material."
-        - "Practise another small concept."
-
-        For technical topics, sequence the plan logically:
-        1. Core concepts and vocabulary.
-        2. Configuration or implementation.
-        3. Testing, debugging, comparison, review, or a small practical task.
-
-        If File Search is available and the user asks about material in an
-        uploaded document, use the document content to make the session goals
-        more specific.
-
-
-        Do not invent tool results. Use the tool output as the factual basis
-        for the study plan.
-
-        If necessary details are missing, ask one short clarification question
-        before calling the tool.
-        """
-};
-
-agentDefinition.Tools.Add(studyPlanTool);
-
-var createdAgentVersion =
-    await projectClient.AgentAdministrationClient.CreateAgentVersionAsync(
-        agentName: agentName,
-        options: new(agentDefinition));
-
-Console.WriteLine(
-    $"Using Foundry agent version: {createdAgentVersion.Value.Version}");
-Console.WriteLine();
-
-
-// ------------------------------------------------------------
 // 3. Connect the Responses client to the newly created version.
 // ------------------------------------------------------------
+
 var agentReference = new AgentReference(
-    name: createdAgentVersion.Value.Name,
-    version: createdAgentVersion.Value.Version);
+    name: agentName,
+    //name: createdAgentVersion.Value.Name,
+    version: agentVersion);
+    //version: createdAgentVersion.Value.Version);
 
 var responseClient =
     projectClient.ProjectOpenAIClient.GetProjectResponsesClientForAgent(agentReference);
 
+Console.WriteLine($"Conected to Foundry agent version: {agentVersion}");
+Console.WriteLine();
+
 string? previousResponseId = null;
 
-Console.WriteLine("Foundry Learning Agent is ready.");
-Console.WriteLine("Try asking for a study plan.");
-Console.WriteLine("Example:");
-Console.WriteLine(
-    "I have 6 hours for Microsoft Foundry Agent Tools. "
-    + "Create a plan with 3 sessions.");
-Console.WriteLine();
 Console.WriteLine("Type 'new' to begin a new conversation.");
 Console.WriteLine("Type 'exit' to close the chat.");
 Console.WriteLine();
@@ -320,16 +201,15 @@ static FunctionCallOutputResponseItem ResolveStudyPlanTool(
             .GetProperty("totalHours")
             .GetInt32();
 
-        var sessionGoals = arguments
-            .GetProperty("sessionGoals")
-            .EnumerateArray()
-            .Select(goal => goal.GetString() ?? string.Empty)
-            .ToList();
+        int numberOfSessions = arguments
+            .GetProperty("numberOfSessions")
+            .GetInt32();
 
+        // This is your existing C# function.
         string studyPlan = StudyTools.CreateStudyPlan(
             topic: topic,
             totalHours: totalHours,
-            sessionGoals: sessionGoals);
+            numberOfSessions: numberOfSessions);
 
         return ResponseItem.CreateFunctionCallOutputItem(
             functionCall.CallId,
