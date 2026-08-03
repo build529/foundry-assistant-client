@@ -56,19 +56,28 @@ FunctionTool studyPlanTool = ResponseTool.CreateFunctionTool(
                         "The total number of study hours available. "
                         + "Must be greater than zero."
                 },
-                numberOfSessions = new
+                sessionGoals = new
                 {
-                    type = "integer",
+                    type = "array",
                     description =
-                        "The number of study sessions to divide the plan into. "
-                        + "Must be greater than zero."
+                        "A list of specific, topic-related learning goals. "
+                        + "Create one goal for each study session. "
+                        + "Each goal must name a concrete concept, practical task, "
+                        + "or expected outcome related to the user's topic. "
+                        + "Do not use vague goals such as 'practice more' or "
+                        + "'learn more about the topic'.",
+                    items = new
+                    {
+                        type = "string"
+                    },
+                    minItems = 1
                 }
             },
             required = new[]
             {
                 "topic",
                 "totalHours",
-                "numberOfSessions"
+                "sessionGoals"
             },
             additionalProperties = false
         },
@@ -95,6 +104,27 @@ var agentDefinition = new DeclarativeAgentDefinition(modelDeploymentName)
         When the user asks for a study plan and provides, or can reasonably
         clarify, a topic, total hours, and number of sessions, use the
         create_study_plan tool.
+
+        Before calling create_study_plan, create one specific session goal for
+        each requested session. Each goal must be directly related to the topic
+        and should include a concrete concept, hands-on action, or measurable
+        learning outcome.
+
+        Never use vague session goals such as:
+        - "Learn more about the topic."
+        - "Practice more."
+        - "Review the material."
+        - "Practise another small concept."
+
+        For technical topics, sequence the plan logically:
+        1. Core concepts and vocabulary.
+        2. Configuration or implementation.
+        3. Testing, debugging, comparison, review, or a small practical task.
+
+        If File Search is available and the user asks about material in an
+        uploaded document, use the document content to make the session goals
+        more specific.
+
 
         Do not invent tool results. Use the tool output as the factual basis
         for the study plan.
@@ -290,15 +320,16 @@ static FunctionCallOutputResponseItem ResolveStudyPlanTool(
             .GetProperty("totalHours")
             .GetInt32();
 
-        int numberOfSessions = arguments
-            .GetProperty("numberOfSessions")
-            .GetInt32();
+        var sessionGoals = arguments
+            .GetProperty("sessionGoals")
+            .EnumerateArray()
+            .Select(goal => goal.GetString() ?? string.Empty)
+            .ToList();
 
-        // This is your existing C# function.
         string studyPlan = StudyTools.CreateStudyPlan(
             topic: topic,
             totalHours: totalHours,
-            numberOfSessions: numberOfSessions);
+            sessionGoals: sessionGoals);
 
         return ResponseItem.CreateFunctionCallOutputItem(
             functionCall.CallId,
