@@ -1,4 +1,7 @@
+using System;
 using System.Text;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace FoundryAssistantClient.Tools;
 
@@ -37,10 +40,11 @@ public static class StudyTools
         plan.AppendLine($"Sessions: {sessionGoals.Count}");
         plan.AppendLine();
 
-        for (var i = 1; i < sessionGoals.Count; i++)
+        // Start at 0 so we include the first session
+        for (var i = 0; i < sessionGoals.Count; i++)
         {
             plan.AppendLine(
-                $"Session {i+1}: {hoursPerSession:F1} hour(s)");
+                $"Session {i + 1}: {hoursPerSession:F1} hour(s)");
             plan.AppendLine($"Goal: {sessionGoals[i]}");
             plan.AppendLine();
         }
